@@ -89,7 +89,7 @@ def analyze_sgf_range(sgf_path, turn_range_str="0-50", max_visits=100, output_js
             if move_infos:
                 best_move = move_infos[0].get("move", "None")
                 pv_list = move_infos[0].get("pv", [])
-                pv_str = " ".join(pv_list[:7]) + (" ..." if len(pv_list) > 7 else "")
+                pv_str = " ".join(pv_list[:3]) + (" ..." if len(pv_list) > 3 else "")
             else:
                 best_move = "None"
                 pv_str = ""

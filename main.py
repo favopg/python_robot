@@ -36,7 +36,8 @@ def print_analysis_result(res):
             m_visits = m.get("visits", 0)
             m_winrate = m.get("winrate", 0.0) * 100
             m_lead = m.get("scoreLead", 0.0)
-            pv = " ".join(m.get("pv", []))
+            pv_list = m.get("pv", [])
+            pv = " ".join(pv_list[:3])
             print(f"{idx:<5} {move:<6} {m_visits:<8} {m_winrate:>5.1f}%     {m_lead:>+6.1f} pts  {pv}")
     print("=" * 65 + "\n")
 

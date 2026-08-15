@@ -9,7 +9,7 @@
 C:\katago\katago.exe
 
 ### katagoのモデル
-C:\katago\kata1-zhizi-b40c768nbt-s11272M-d5935M.bin.gz
+C:\katago\kata1-b10c128-s41138688-d27396855.txt.gz
 
 ### katagoの設定ファイル
 C:\katago\default_gtp.cfg

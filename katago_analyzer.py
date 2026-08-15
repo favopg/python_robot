@@ -212,6 +212,10 @@ class KataGoAnalyzer:
             raise RuntimeError(f"KataGo startup error: {res['error']}")
         return "KataGo Analysis Engine is ready."
 
+    def is_running(self):
+        """KataGoプロセスが動作中かどうかを判定します。"""
+        return self.process is not None and self.process.poll() is None
+
     def stop(self):
         """KataGoプロセスを終了します。"""
         if self.process:

@@ -1,2 +1,8 @@
-# SGf解析ライブラリ
+# SGF解析ライブラリ
 # sgfmill
+
+# FastAPI Web APIサーバー
+fastapi
+uvicorn
+pydantic
+httpx

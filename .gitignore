@@ -1,0 +1,33 @@
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+# KataGo logs and runtime output
+gtp_logs/
+analysis_logs/
+*.log
+katago_stderr.log
+
+# Large model files and executables
+*.bin.gz
+*.exe
+
+# Editor and IDE configurations
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Environment variables and local settings
+.env
+.env.*
+config.local.py

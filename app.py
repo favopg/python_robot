@@ -56,6 +56,7 @@ class TurnAnalysis(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     status: str = Field("success", description="ステータス")
+    sgf_content: str = Field(..., description="解析対象のSGFファイルの内容（SGFテキスト全体）")
     total_moves: int = Field(..., description="SGFの総手数")
     analyzed_positions: int = Field(..., description="解析した局面数")
     results: List[TurnAnalysis] = Field(..., description="局面ごとの解析結果一覧")
@@ -90,6 +91,16 @@ def analyze_sgf_endpoint(req: AnalyzeRequest):
         )
 
     source_file = matched_files[0]
+
+    # SGFファイルの内容読み込み
+    try:
+        with open(source_file, "r", encoding="utf-8", errors="ignore") as f:
+            sgf_content = f.read()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"SGFファイルの読み込みに失敗しました: {str(e)}"
+        )
 
     # SGFパース
     try:
@@ -172,6 +183,7 @@ def analyze_sgf_endpoint(req: AnalyzeRequest):
 
     return AnalyzeResponse(
         status="success",
+        sgf_content=sgf_content,
         total_moves=total_moves,
         analyzed_positions=len(summary_results),
         results=summary_results

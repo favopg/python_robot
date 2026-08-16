@@ -1,3 +1,4 @@
+import glob
 import os
 from contextlib import asynccontextmanager
 from typing import List, Optional
@@ -32,10 +33,9 @@ app = FastAPI(
 
 # --- リクエストモデル ---
 class AnalyzeRequest(BaseModel):
-    sgf_content: Optional[str] = Field(None, description="SGFのテキスト文字列（直接渡す場合）")
-    sgf_path: Optional[str] = Field(None, description="サーバー上のSGFファイルパス（例: C:\\katago\\sgf\\sample.sgf）")
-    turn_range: str = Field("0-50", description="解析対象の手番範囲（例: '0-50', '0..30', '10,20,30'）")
-    max_visits: int = Field(100, description="1局面あたりの探索手数")
+    date: str = Field(..., description="対象日付 (YYYYMMDD形式, 例: '20260801')")
+    turn_range: Optional[str] = Field(None, description="解析対象の手番範囲（未指定時はSGFの全手番を解析）")
+    max_visits: int = Field(50, description="1局面あたりの探索手数（デフォルト: 50）")
 
 # --- レスポンスモデル ---
 class CandidateMove(BaseModel):
@@ -70,17 +70,30 @@ def health_check():
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)
 def analyze_sgf_endpoint(req: AnalyzeRequest):
-    """SGF棋譜と手番範囲を受け取り、KataGoによる解析結果をJSONで返却します。"""
-    source = req.sgf_content if req.sgf_content else req.sgf_path
-    if not source:
+    """日付（YYYYMMDD）と手番範囲を受け取り、sgf_pickupフォルダ内の該当SGF棋譜をKataGoで解析して結果を返却します。"""
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    pickup_dir = os.path.join(project_root, "sgf_pickup")
+    
+    # YYYYMMDD に前方一致する SGF ファイルを検索
+    pattern = os.path.join(pickup_dir, f"{req.date}*.sgf")
+    matched_files = glob.glob(pattern)
+
+    # 見つからない場合、念のためアンダースコア等の区切りパターンも検索
+    if not matched_files:
+        pattern_under = os.path.join(pickup_dir, f"{req.date}_*.sgf")
+        matched_files = glob.glob(pattern_under)
+
+    if not matched_files:
         raise HTTPException(
-            status_code=400,
-            detail="`sgf_content` または `sgf_path` のいずれかを指定してください。"
+            status_code=404,
+            detail=f"日付 '{req.date}' に一致するSGFファイルが sgf_pickup フォルダに見つかりませんでした。"
         )
+
+    source_file = matched_files[0]
 
     # SGFパース
     try:
-        parsed = parse_sgf(source)
+        parsed = parse_sgf(source_file)
     except Exception as e:
         raise HTTPException(
             status_code=400,
@@ -88,15 +101,21 @@ def analyze_sgf_endpoint(req: AnalyzeRequest):
         )
 
     total_moves = len(parsed["moves"])
-    try:
-        turns = parse_turn_range(req.turn_range, max_available_turns=total_moves)
-    except Exception as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"`turn_range` の形式が不正です: {str(e)}"
-        )
 
-    valid_turns = [t for t in turns if 0 <= t <= total_moves]
+    # turn_range のパースと検証
+    if req.turn_range and req.turn_range.strip():
+        try:
+            turns = parse_turn_range(req.turn_range, max_available_turns=total_moves)
+            valid_turns = [t for t in turns if 0 <= t <= total_moves]
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"`turn_range` の形式が不正です: {str(e)}"
+            )
+    else:
+        # turn_rangeが指定されていない場合は0手目〜総手数の全手番
+        valid_turns = list(range(0, total_moves + 1))
+
     if not valid_turns:
         raise HTTPException(
             status_code=400,
@@ -106,7 +125,7 @@ def analyze_sgf_endpoint(req: AnalyzeRequest):
     # KataGoで解析実行
     try:
         raw_results = analyzer.analyze_sgf(
-            source,
+            source_file,
             max_visits=req.max_visits,
             analyze_turns=valid_turns
         )

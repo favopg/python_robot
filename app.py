@@ -1,4 +1,6 @@
 import glob
+import hashlib
+import json
 import os
 from contextlib import asynccontextmanager
 from typing import List, Optional
@@ -61,6 +63,14 @@ class AnalyzeResponse(BaseModel):
     analyzed_positions: int = Field(..., description="解析した局面数")
     results: List[TurnAnalysis] = Field(..., description="局面ごとの解析結果一覧")
 
+def get_cache_file_path(req: AnalyzeRequest, cache_dir: str) -> str:
+    """リクエストパラメータから一意のキャッシュファイルパスを生成"""
+    turn_str = str(req.turn_range) if req.turn_range is not None else "all"
+    raw_key = f"{req.date}_{turn_str}_{req.max_visits}"
+    hash_key = hashlib.md5(raw_key.encode("utf-8")).hexdigest()
+    filename = f"{req.date}_{hash_key}.json"
+    return os.path.join(cache_dir, filename)
+
 @app.get("/health")
 def health_check():
     """ヘルスチェックエンドポイント"""
@@ -73,6 +83,22 @@ def health_check():
 def analyze_sgf_endpoint(req: AnalyzeRequest):
     """日付（YYYYMMDD）と手番範囲を受け取り、sgf_pickupフォルダ内の該当SGF棋譜をKataGoで解析して結果を返却します。"""
     project_root = os.path.dirname(os.path.abspath(__file__))
+    cache_dir = os.path.join(project_root, "analysis_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    cache_path = get_cache_file_path(req, cache_dir)
+
+    # 1. キャッシュが存在する場合はJSONから読み込んで返却
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cached_data = json.load(f)
+            print(f"[INFO] Returning cached analysis from: {cache_path}")
+            return AnalyzeResponse(**cached_data)
+        except Exception as e:
+            print(f"[WARN] Failed to read cache ({cache_path}): {e}")
+
+    # 2. キャッシュが存在しない場合は通常のSGF検索 & KataGo解析を実行
     pickup_dir = os.path.join(project_root, "sgf_pickup")
     
     # YYYYMMDD に前方一致する SGF ファイルを検索
@@ -181,13 +207,26 @@ def analyze_sgf_endpoint(req: AnalyzeRequest):
             candidates=candidates
         ))
 
-    return AnalyzeResponse(
+    response_data = AnalyzeResponse(
         status="success",
         sgf_content=sgf_content,
         total_moves=total_moves,
         analyzed_positions=len(summary_results),
         results=summary_results
     )
+
+    # 3. 解析結果をJSONファイルとして書き込み保存
+    try:
+        with open(cache_path, "w", encoding="utf-8") as f:
+            if hasattr(response_data, "model_dump_json"):
+                f.write(response_data.model_dump_json(indent=2))
+            else:
+                f.write(response_data.json(indent=2))
+        print(f"[INFO] Saved analysis cache to: {cache_path}")
+    except Exception as e:
+        print(f"[WARN] Failed to write cache ({cache_path}): {e}")
+
+    return response_data
 
 if __name__ == "__main__":
     # ポート8081以外のポート（8000）で起動

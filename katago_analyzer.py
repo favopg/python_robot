@@ -75,6 +75,11 @@ def parse_sgf(sgf_text_or_path):
     if pl_match:
         initial_player = pl_match.group(1).upper()
 
+    pb_match = re.search(r'PB\[([^\]]*)\]', sgf_text)
+    pw_match = re.search(r'PW\[([^\]]*)\]', sgf_text)
+    black_player = pb_match.group(1).strip() if pb_match else "Black"
+    white_player = pw_match.group(1).strip() if pw_match else "White"
+
     # 置石（AB/AW）
     for m in re.finditer(r'AB((?:\[[a-zA-Z]{0,2}\])+)', sgf_text):
         for loc in re.findall(r'\[([a-zA-Z]{0,2})\]', m.group(1)):
@@ -102,7 +107,9 @@ def parse_sgf(sgf_text_or_path):
         "rules": rules,
         "initialStones": initial_stones,
         "initialPlayer": initial_player,
-        "moves": moves
+        "moves": moves,
+        "black": black_player,
+        "white": white_player
     }
 
 class KataGoAnalyzer:
@@ -274,7 +281,10 @@ class KataGoAnalyzer:
             line = self.process.stdout.readline()
             if not line:
                 break
-            results.append(json.loads(line))
+            data = json.loads(line)
+            if "error" in data:
+                raise RuntimeError(f"KataGo error: {data['error']} (field: {data.get('field', 'unknown')})")
+            results.append(data)
 
         return results
 

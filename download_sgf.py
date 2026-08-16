@@ -1,133 +1,133 @@
-import sys
 import os
 import re
-import json
+import html
+import time
 import urllib.request
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-def fetch_url(url):
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return resp.read().decode('utf-8')
+def fetch_url(url, retries=3):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    req = urllib.request.Request(url, headers=headers)
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return resp.read().decode('utf-8')
+        except Exception as e:
+            if attempt == retries - 1:
+                raise e
+            time.sleep(1)
 
 def sanitize_filename(name):
     clean = re.sub(r'[\\/*?:"<>|\s]+', '_', name).strip('_.')
-    return clean if clean else "game"
+    return clean if clean else "unknown"
+
+def collect_latest_game_ids(target_count=100):
+    game_ids = []
+    seen = set()
+    page = 1
+    
+    while len(game_ids) < target_count:
+        list_url = f"https://kifudepot.net/index.php?page={page}"
+        print(f"一覧取得中 (Page {page}): {list_url}")
+        page_html = fetch_url(list_url)
+        
+        matches = re.findall(r'kifucontents\.php\?id=([a-zA-Z0-9%_\-\+\=]+)', page_html)
+        if not matches:
+            print(f"Page {page} で対局リンクが見つかりませんでした。")
+            break
+            
+        new_count = 0
+        for gid in matches:
+            if gid not in seen:
+                seen.add(gid)
+                game_ids.append(gid)
+                new_count += 1
+                if len(game_ids) >= target_count:
+                    break
+                    
+        print(f"Page {page} から {new_count} 件追加 (合計: {len(game_ids)}/{target_count})")
+        page += 1
+        time.sleep(0.5)
+        
+    return game_ids[:target_count]
+
+def fetch_game_sgf(game_id, index):
+    game_url = f"https://kifudepot.net/kifucontents.php?id={game_id}"
+    try:
+        game_html = fetch_url(game_url)
+        match = re.search(r'<textarea\s+id\s*=\s*["\']sgf["\'][^>]*>(.*?)</textarea>', game_html, re.DOTALL)
+        if not match:
+            print(f"[{index:03d}] SGFタグが見つかりませんでした: {game_url}")
+            return None
+            
+        sgf_text = html.unescape(match.group(1).strip())
+        if not sgf_text.startswith("(;"):
+            print(f"[{index:03d}] SGFフォーマット不正: {game_url}")
+            return None
+            
+        pb_match = re.search(r'PB\[(.*?)\]', sgf_text)
+        pw_match = re.search(r'PW\[(.*?)\]', sgf_text)
+        dt_match = re.search(r'DT\[(.*?)\]', sgf_text)
+        
+        black_name = pb_match.group(1) if pb_match else "Black"
+        white_name = pw_match.group(1) if pw_match else "White"
+        date_str = dt_match.group(1).replace('-', '') if dt_match else "unknown"
+        
+        return {
+            "index": index,
+            "id": game_id,
+            "date": date_str,
+            "black": black_name,
+            "white": white_name,
+            "sgf": sgf_text
+        }
+    except Exception as e:
+        print(f"[{index:03d}] エラー ({game_url}): {e}")
+        return None
 
 def main():
+    target_count = 100
     sgf_dir = os.path.join(os.getcwd(), 'sgf')
     os.makedirs(sgf_dir, exist_ok=True)
     
-    # Collect game UUIDs across pages
-    all_game_uuids = []
-    seen_uuids = set()
-    current_url = 'https://kifubara.app/ja/games'
-    
-    page = 1
-    while current_url and len(all_game_uuids) < 100 and page <= 5:
-        print(f"Fetching list page {page}: {current_url}")
-        html = fetch_url(current_url)
-        new_on_page = 0
-        for m in re.finditer(r'/ja/games/([0-9a-fA-F-]{36})', html):
-            gid = m.group(1)
-            if gid not in seen_uuids:
-                seen_uuids.add(gid)
-                all_game_uuids.append(gid)
-                new_on_page += 1
-        
-        print(f"Page {page} added {new_on_page} games. Total unique: {len(all_game_uuids)}")
-        
-        # Check next page link
-        next_match = re.search(r'href="(\?page=\d+[^"]*)"', html)
-        if next_match:
-            next_qs = next_match.group(1).replace('&amp;', '&')
-            current_url = urllib.parse.urljoin('https://kifubara.app/ja/games', next_qs)
-            page += 1
-        else:
-            break
-
-    print(f"Total game UUIDs collected across {page} pages: {len(all_game_uuids)}")
-
-    def fetch_game_sgf(gid):
-        g_url = f'https://kifubara.app/ja/games/{gid}'
-        try:
-            g_html = fetch_url(g_url)
-            m = re.search(r'var\s+sgf\s*=\s*("(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\');', g_html)
-            if not m:
-                return None
-            sgf_content = json.loads(m.group(1))
-            dt_match = re.search(r'DT\[([^\]]*)\]', sgf_content)
-            dt = dt_match.group(1) if dt_match else ""
-            
-            pb_match = re.search(r'PB\[([^\]]*)\]', sgf_content)
-            pw_match = re.search(r'PW\[([^\]]*)\]', sgf_content)
-            pb = pb_match.group(1) if pb_match else "Black"
-            pw = pw_match.group(1) if pw_match else "White"
-            
-            return {
-                "uuid": gid,
-                "date": dt,
-                "black": pb,
-                "white": pw,
-                "sgf": sgf_content
-            }
-        except Exception as ex:
-            return None
-
-    # Fetch details concurrently
-    print("Fetching game details in parallel...")
-    results_by_index = {}
-    with ThreadPoolExecutor(max_workers=12) as executor:
-        future_to_index = {executor.submit(fetch_game_sgf, gid): idx for idx, gid in enumerate(all_game_uuids)}
-        for future in as_completed(future_to_index):
-            idx = future_to_index[future]
-            res = future.result()
-            if res:
-                results_by_index[idx] = res
-
-    # Sort in original chronological/listed order
-    sorted_indices = sorted(results_by_index.keys())
-    valid_202608_games = []
-    for idx in sorted_indices:
-        item = results_by_index[idx]
-        dt = item["date"]
-        # Match 2026-08 or 202608
-        if dt.startswith("2026-08") or dt.startswith("202608"):
-            valid_202608_games.append(item)
-            if len(valid_202608_games) == 31:
-                break
-
-    print(f"Collected {len(valid_202608_games)} games from 2026-08.")
-
-    # Clean existing sgf directory to have exactly 31 files
+    # 既存のsgfディレクトリ内ファイルをクリア（必要に応じて）
     for fname in os.listdir(sgf_dir):
         fpath = os.path.join(sgf_dir, fname)
-        if os.path.isfile(fpath):
+        if os.path.isfile(fpath) and fname.endswith('.sgf'):
             os.remove(fpath)
-
-    # Save exactly 31 files into sgf_dir
-    saved_files = []
-    for i, g in enumerate(valid_202608_games, start=1):
-        dt_clean = g["date"].replace("-", "")
-        b_clean = sanitize_filename(g["black"])
-        w_clean = sanitize_filename(g["white"])
-        filename = f"{dt_clean}_{i:02d}_{b_clean}_vs_{w_clean}_{g['uuid'][:8]}.sgf"
+            
+    print(f"最新 {target_count} 件の対局IDを取得中...")
+    game_ids = collect_latest_game_ids(target_count)
+    print(f"取得完了: {len(game_ids)} 件")
+    
+    print("SGFデータのダウンロード中 (並列処理)...")
+    results = {}
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(fetch_game_sgf, gid, idx + 1): idx + 1 for idx, gid in enumerate(game_ids)}
+        for future in as_completed(futures):
+            res = future.result()
+            if res:
+                results[res["index"]] = res
+                
+    saved_count = 0
+    for idx in sorted(results.keys()):
+        item = results[idx]
+        b_clean = sanitize_filename(item["black"])
+        w_clean = sanitize_filename(item["white"])
+        date_clean = sanitize_filename(item["date"])
+        
+        filename = f"{item['index']:03d}_{date_clean}_{b_clean}_vs_{w_clean}.sgf"
         filepath = os.path.join(sgf_dir, filename)
         
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(g["sgf"])
-        saved_files.append((filename, g["date"], g["uuid"]))
-
-    print(f"Successfully saved {len(saved_files)} SGF files to {sgf_dir}.")
-    
-    # Write index.json / report
-    report = [
-        {"file": f, "date": dt, "uuid": gid}
-        for f, dt, gid in saved_files
-    ]
-    with open(os.path.join(sgf_dir, "sgf_index.json"), "w", encoding="utf-8") as f:
-        json.dump(report, f, ensure_ascii=False, indent=2)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(item["sgf"])
+        saved_count += 1
+        
+    print(f"\n==========================================")
+    print(f"正常に保存されたSGFファイル数: {saved_count} / {target_count}")
+    print(f"保存先: {sgf_dir}")
+    print(f"==========================================")
 
 if __name__ == "__main__":
     main()

@@ -6,13 +6,10 @@
 * python
 
 ### katagoの実行ファイル
-C:\katago\katago.exe
+\katago\katago.exe
 
 ### katagoのモデル
-C:\katago\kata1-b10c128-s41138688-d27396855.txt.gz
+\katago\kata1-b10c128-s41138688-d27396855.txt.gz
 
 ### katagoの設定ファイル
-C:\katago\default_gtp.cfg
-
-### katago解析に使用するsgfファイル
-C:\katago\sgf配下
+\katago\default_gtp.cfg

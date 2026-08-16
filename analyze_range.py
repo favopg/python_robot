@@ -113,7 +113,7 @@ def main():
         "sgf_path",
         nargs="?",
         default=os.path.join(config.SGF_DIR, "sample.sgf"),
-        help="解析対象のSGFファイルパス (デフォルト: C:\\katago\\sgf\\sample.sgf)"
+        help="解析対象のSGFファイルパス (デフォルト: sgf\\sample.sgf)"
     )
     parser.add_argument(
         "turn_range",

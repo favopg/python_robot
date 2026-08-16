@@ -26,7 +26,7 @@ KataGoの **Analysis Engine モード** を利用してSGF棋譜の局面解析�
    .\.venv\Scripts\python.exe main.py
    
    # 特定のSGFファイルを指定する場合
-   .\.venv\Scripts\python.exe main.py C:\katago\sgf\target.sgf
+   .\.venv\Scripts\python.exe main.py .\sgf\target.sgf
    ```
 
 3. 対話モードでのコマンド:

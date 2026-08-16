@@ -120,6 +120,7 @@ class KataGoAnalyzer:
         self.override_config = override_config
         self.process = None
         self._stderr_thread = None
+        self._lock = threading.Lock()
 
     def clear_logs(self):
         """gtp_logs および analysis_logs ディレクトリ内のファイルをすべて削除します。"""
@@ -225,68 +226,71 @@ class KataGoAnalyzer:
 
     def stop(self):
         """KataGoプロセスを終了します。"""
-        if self.process:
-            try:
-                if self.process.stdin:
-                    self.process.stdin.close()
-                self.process.terminate()
-                self.process.wait(timeout=5)
-            except Exception:
+        with self._lock:
+            if self.process:
                 try:
-                    self.process.kill()
+                    if self.process.stdin:
+                        self.process.stdin.close()
+                    self.process.terminate()
+                    self.process.wait(timeout=5)
                 except Exception:
-                    pass
-            self.process = None
+                    try:
+                        self.process.kill()
+                    except Exception:
+                        pass
+                self.process = None
 
     def query(self, query_dict):
         """KataGo Analysis EngineにJSONクエリを送信し、単一のレスポンスを取得します。"""
-        if not self.process or self.process.poll() is not None:
-            raise RuntimeError("KataGo process is not running.")
+        with self._lock:
+            if not self.process or self.process.poll() is not None:
+                raise RuntimeError("KataGo process is not running.")
 
-        query_str = json.dumps(query_dict)
-        self.process.stdin.write(query_str + "\n")
-        self.process.stdin.flush()
+            query_str = json.dumps(query_dict)
+            self.process.stdin.write(query_str + "\n")
+            self.process.stdin.flush()
 
-        line = self.process.stdout.readline()
-        if not line:
-            stderr_out = ""
-            if self.process.stderr:
-                try:
-                    stderr_out = self.process.stderr.read()
-                except Exception:
-                    pass
-            raise RuntimeError(f"KataGo stdout closed unexpectedly. stderr: {stderr_out}")
+            line = self.process.stdout.readline()
+            if not line:
+                stderr_out = ""
+                if self.process.stderr:
+                    try:
+                        stderr_out = self.process.stderr.read()
+                    except Exception:
+                        pass
+                raise RuntimeError(f"KataGo stdout closed unexpectedly. stderr: {stderr_out}")
 
-        return json.loads(line)
+            return json.loads(line)
 
     def query_multi_turns(self, query_dict, turns_count=None):
         """複数手番の解析レスポンスを取得します。"""
-        if not self.process or self.process.poll() is not None:
-            raise RuntimeError("KataGo process is not running.")
+        with self._lock:
+            if not self.process or self.process.poll() is not None:
+                raise RuntimeError("KataGo process is not running.")
 
-        if turns_count is None:
-            if "analyzeTurns" in query_dict:
-                turns_count = len(query_dict["analyzeTurns"])
-            elif "moves" in query_dict:
-                turns_count = len(query_dict["moves"]) + 1
-            else:
-                turns_count = 1
+            if turns_count is None:
+                if "analyzeTurns" in query_dict:
+                    turns_count = len(query_dict["analyzeTurns"])
+                elif "moves" in query_dict:
+                    turns_count = len(query_dict["moves"]) + 1
+                else:
+                    turns_count = 1
 
-        query_str = json.dumps(query_dict)
-        self.process.stdin.write(query_str + "\n")
-        self.process.stdin.flush()
+            query_str = json.dumps(query_dict)
+            self.process.stdin.write(query_str + "\n")
+            self.process.stdin.flush()
 
-        results = []
-        for _ in range(turns_count):
-            line = self.process.stdout.readline()
-            if not line:
-                break
-            data = json.loads(line)
-            if "error" in data:
-                raise RuntimeError(f"KataGo error: {data['error']} (field: {data.get('field', 'unknown')})")
-            results.append(data)
+            results = []
+            for _ in range(turns_count):
+                line = self.process.stdout.readline()
+                if not line:
+                    break
+                data = json.loads(line)
+                if "error" in data:
+                    raise RuntimeError(f"KataGo error: {data['error']} (field: {data.get('field', 'unknown')})")
+                results.append(data)
 
-        return results
+            return results
 
     def analyze_moves(self, moves, max_visits=100, rules="japanese", komi=6.5, board_size=19,
                       initial_stones=None, initial_player="B", analyze_turns=None, query_id=None,

@@ -2,6 +2,7 @@ import glob
 import hashlib
 import json
 import os
+import threading
 from contextlib import asynccontextmanager
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException
@@ -12,8 +13,9 @@ import config
 from katago_analyzer import KataGoAnalyzer, parse_sgf
 from analyze_range import parse_turn_range
 
-# KataGoアナライザーのインスタンス
+# KataGoアナライザーのインスタンスと排他制御用ロック
 analyzer = KataGoAnalyzer()
+analysis_lock = threading.Lock()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -161,11 +163,12 @@ def analyze_sgf_endpoint(req: AnalyzeRequest):
 
     # KataGoで解析実行
     try:
-        raw_results = analyzer.analyze_sgf(
-            source_file,
-            max_visits=req.max_visits,
-            analyze_turns=valid_turns
-        )
+        with analysis_lock:
+            raw_results = analyzer.analyze_sgf(
+                source_file,
+                max_visits=req.max_visits,
+                analyze_turns=valid_turns
+            )
         if not isinstance(raw_results, list):
             raw_results = [raw_results]
     except Exception as e:

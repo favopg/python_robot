@@ -11,7 +11,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
-# KataGo logs and runtime output
+# KataGo directory, logs and runtime output
+katago/
 gtp_logs/
 analysis_logs/
 *.log

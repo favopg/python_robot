@@ -22,6 +22,9 @@ katago_stderr.log
 *.bin.gz
 *.exe
 
+# SGF files
+sgf/
+
 # Editor and IDE configurations
 .idea/
 .vscode/

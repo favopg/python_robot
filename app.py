@@ -73,6 +73,15 @@ def get_cache_file_path(req: AnalyzeRequest, cache_dir: str) -> str:
     filename = f"{req.date}_{hash_key}.json"
     return os.path.join(cache_dir, filename)
 
+def find_cache_file(date: str, cache_dir: str) -> Optional[str]:
+    """日付（YYYYMMDD）に前方一致するキャッシュファイルを検索"""
+    pattern = os.path.join(cache_dir, f"{date}*.json")
+    matched = glob.glob(pattern)
+    if not matched:
+        pattern_under = os.path.join(cache_dir, f"{date}_*.json")
+        matched = glob.glob(pattern_under)
+    return matched[0] if matched else None
+
 @app.get("/health")
 def health_check():
     """ヘルスチェックエンドポイント"""
@@ -88,17 +97,16 @@ def analyze_sgf_endpoint(req: AnalyzeRequest):
     cache_dir = os.path.join(project_root, "analysis_cache")
     os.makedirs(cache_dir, exist_ok=True)
 
-    cache_path = get_cache_file_path(req, cache_dir)
-
-    # 1. キャッシュが存在する場合はJSONから読み込んで返却
-    if os.path.exists(cache_path):
+    # 1. キャッシュが存在する場合はJSONから読み込んで返却（YYYYMMDDの前方一致で検索）
+    cached_file = find_cache_file(req.date, cache_dir)
+    if cached_file:
         try:
-            with open(cache_path, "r", encoding="utf-8") as f:
+            with open(cached_file, "r", encoding="utf-8") as f:
                 cached_data = json.load(f)
-            print(f"[INFO] Returning cached analysis from: {cache_path}")
+            print(f"[INFO] Returning cached analysis from: {cached_file}")
             return AnalyzeResponse(**cached_data)
         except Exception as e:
-            print(f"[WARN] Failed to read cache ({cache_path}): {e}")
+            print(f"[WARN] Failed to read cache ({cached_file}): {e}")
 
     # 2. キャッシュが存在しない場合は通常のSGF検索 & KataGo解析を実行
     pickup_dir = os.path.join(project_root, "sgf_pickup")
@@ -219,6 +227,7 @@ def analyze_sgf_endpoint(req: AnalyzeRequest):
     )
 
     # 3. 解析結果をJSONファイルとして書き込み保存
+    cache_path = get_cache_file_path(req, cache_dir)
     try:
         with open(cache_path, "w", encoding="utf-8") as f:
             if hasattr(response_data, "model_dump_json"):

@@ -240,6 +240,153 @@ def analyze_sgf_endpoint(req: AnalyzeRequest):
 
     return response_data
 
+@app.post("/api/analyze9", response_model=AnalyzeResponse)
+def analyze9_sgf_endpoint(req: AnalyzeRequest):
+    """
+    日付（YYYYMMDD）と手番範囲を受け取り、sgf9フォルダ内の該当SGF棋譜をKataGoで解析して
+    analysis_cache9フォルダに結果を保存・返却します。
+    """
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    cache_dir = os.path.join(project_root, "analysis_cache9")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    # 1. キャッシュが存在する場合はJSONから読み込んで返却（YYYYMMDDの前方一致で検索）
+    cached_file = find_cache_file(req.date, cache_dir)
+    if cached_file:
+        try:
+            with open(cached_file, "r", encoding="utf-8") as f:
+                cached_data = json.load(f)
+            print(f"[INFO] Returning cached analysis from: {cached_file}")
+            return AnalyzeResponse(**cached_data)
+        except Exception as e:
+            print(f"[WARN] Failed to read cache ({cached_file}): {e}")
+
+    # 2. キャッシュが存在しない場合はsgf9フォルダからSGF検索 & KataGo解析を実行
+    sgf_dir = os.path.join(project_root, "sgf9")
+    
+    pattern = os.path.join(sgf_dir, f"*{req.date}*.sgf")
+    matched_files = glob.glob(pattern)
+
+    if not matched_files:
+        raise HTTPException(
+            status_code=404,
+            detail=f"日付 '{req.date}' に一致するSGFファイルが sgf9 フォルダに見つかりませんでした。"
+        )
+
+    source_file = matched_files[0]
+
+    # SGFファイルの内容読み込み
+    try:
+        with open(source_file, "r", encoding="utf-8", errors="ignore") as f:
+            sgf_content = f.read()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"SGFファイルの読み込みに失敗しました: {str(e)}"
+        )
+
+    # SGFパース
+    try:
+        parsed = parse_sgf(source_file)
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"SGFのパースに失敗しました: {str(e)}"
+        )
+
+    total_moves = len(parsed["moves"])
+
+    # turn_range のパースと検証
+    if req.turn_range and req.turn_range.strip():
+        try:
+            turns = parse_turn_range(req.turn_range, max_available_turns=total_moves)
+            valid_turns = [t for t in turns if 0 <= t <= total_moves]
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"`turn_range` の形式が不正です: {str(e)}"
+            )
+    else:
+        # turn_rangeが指定されていない場合は0手目〜総手数の全手番
+        valid_turns = list(range(0, total_moves + 1))
+
+    if not valid_turns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"有効な手番が指定されていません（このSGFの有効手番は 0〜{total_moves} です）。"
+        )
+
+    # KataGoで解析実行
+    try:
+        with analysis_lock:
+            raw_results = analyzer.analyze_sgf(
+                source_file,
+                max_visits=req.max_visits,
+                analyze_turns=valid_turns
+            )
+        if not isinstance(raw_results, list):
+            raw_results = [raw_results]
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"KataGo解析中にエラーが発生しました: {str(e)}"
+        )
+
+    # レスポンス整形
+    summary_results: List[TurnAnalysis] = []
+    for res in raw_results:
+        turn = res.get("turnNumber", 0)
+        root_info = res.get("rootInfo", {})
+        player = root_info.get("currentPlayer", "?")
+        winrate = round(root_info.get("winrate", 0.0) * 100, 2)
+        score_lead = round(root_info.get("scoreLead", 0.0), 2)
+
+        move_infos = res.get("moveInfos", [])
+        candidates = []
+        for m in move_infos:
+            candidates.append(CandidateMove(
+                move=m.get("move", "None"),
+                visits=m.get("visits", 0),
+                winrate=round(m.get("winrate", 0.0) * 100, 2),
+                scoreLead=round(m.get("scoreLead", 0.0), 2),
+                pv=m.get("pv", [])
+            ))
+
+        best_move = move_infos[0].get("move", "None") if move_infos else "None"
+        best_pv = move_infos[0].get("pv", []) if move_infos else []
+
+        summary_results.append(TurnAnalysis(
+            turn=turn,
+            player=player,
+            winrate=winrate,
+            scoreLead=score_lead,
+            bestMove=best_move,
+            pv=best_pv,
+            candidates=candidates
+        ))
+
+    response_data = AnalyzeResponse(
+        status="success",
+        sgf_content=sgf_content,
+        total_moves=total_moves,
+        analyzed_positions=len(summary_results),
+        results=summary_results
+    )
+
+    # 3. 解析結果をJSONファイルとして書き込み保存
+    cache_path = get_cache_file_path(req, cache_dir)
+    try:
+        with open(cache_path, "w", encoding="utf-8") as f:
+            if hasattr(response_data, "model_dump_json"):
+                f.write(response_data.model_dump_json(indent=2))
+            else:
+                f.write(response_data.json(indent=2))
+        print(f"[INFO] Saved analysis cache to: {cache_path}")
+    except Exception as e:
+        print(f"[WARN] Failed to write cache ({cache_path}): {e}")
+
+    return response_data
+
 if __name__ == "__main__":
     # ポート8081以外のポート（8000）で起動
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)

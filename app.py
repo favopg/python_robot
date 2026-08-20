@@ -170,6 +170,7 @@ def analyze_sgf_endpoint(req: AnalyzeRequest):
         )
 
     # KataGoで解析実行
+    print(f"[INFO] 解析開始: 対象日付 {req.date} (総解析局面数: {len(valid_turns)})")
     try:
         with analysis_lock:
             raw_results = analyzer.analyze_sgf(
@@ -235,6 +236,7 @@ def analyze_sgf_endpoint(req: AnalyzeRequest):
             else:
                 f.write(response_data.json(indent=2))
         print(f"[INFO] Saved analysis cache to: {cache_path}")
+        print("[INFO] 解析完了 (キャッシュ保存完了)")
     except Exception as e:
         print(f"[WARN] Failed to write cache ({cache_path}): {e}")
 
@@ -317,6 +319,7 @@ def analyze9_sgf_endpoint(req: AnalyzeRequest):
         )
 
     # KataGoで解析実行
+    print(f"[INFO] 解析開始: 対象日付 {req.date} (総解析局面数: {len(valid_turns)})")
     try:
         with analysis_lock:
             raw_results = analyzer.analyze_sgf(
@@ -382,6 +385,7 @@ def analyze9_sgf_endpoint(req: AnalyzeRequest):
             else:
                 f.write(response_data.json(indent=2))
         print(f"[INFO] Saved analysis cache to: {cache_path}")
+        print("[INFO] 解析完了 (キャッシュ保存完了)")
     except Exception as e:
         print(f"[WARN] Failed to write cache ({cache_path}): {e}")
 

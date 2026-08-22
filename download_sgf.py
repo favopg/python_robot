@@ -4,6 +4,7 @@ import html
 import time
 import urllib.request
 import urllib.parse
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def fetch_url(url, retries=3):
@@ -88,7 +89,8 @@ def fetch_game_sgf(game_id, index):
 
 def main():
     target_count = 100
-    sgf_dir = os.path.join(os.getcwd(), 'sgf')
+    sys_date = datetime.now().strftime("%Y%m%d")
+    sgf_dir = os.path.join(os.getcwd(), 'sgf', sys_date)
     os.makedirs(sgf_dir, exist_ok=True)
     
     # 既存のsgfディレクトリ内ファイルをクリア（必要に応じて）

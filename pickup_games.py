@@ -8,13 +8,14 @@ import config
 from katago_analyzer import KataGoAnalyzer, parse_sgf
 
 def analyze_and_pickup():
-    # 入力SGFフォルダ（当プロジェクトのsgfフォルダ）
+    # 入力SGFフォルダ（当プロジェクトのsgfフォルダ内の日付サブディレクトリ）
     project_root = os.path.dirname(os.path.abspath(__file__))
-    sgf_dir = os.path.join(project_root, "sgf")
-    pickup_dir = os.path.join(project_root, "sgf_pickup")
+    sys_date = datetime.now().strftime("%Y%m%d")
+    sgf_dir = os.path.join(project_root, "sgf", sys_date)
+    pickup_dir = os.path.join(project_root, "sgf_pickup", sys_date)
     
     os.makedirs(pickup_dir, exist_ok=True)
-    # 既存のsgf_pickupフォルダ内SGFファイルをクリア
+    # 既存の出力フォルダ内SGFファイルをクリア
     for fname in os.listdir(pickup_dir):
         fpath = os.path.join(pickup_dir, fname)
         if os.path.isfile(fpath) and fname.endswith('.sgf'):
@@ -23,9 +24,7 @@ def analyze_and_pickup():
             except Exception:
                 pass
     
-    sys_month = datetime.now().strftime("%Y%m")
-    
-    # sgf直下のSGFファイル取得
+    # sgf\YYYYMMDD内のSGFファイル取得
     sgf_files = sorted(glob.glob(os.path.join(sgf_dir, "*.sgf")))
     print(f"Found {len(sgf_files)} SGF files in {sgf_dir}")
     if not sgf_files:
@@ -164,11 +163,11 @@ def analyze_and_pickup():
                 b_clean = re.sub(r'[\\/*?:"<>|\s]+', '_', black_name).strip('_.') or "Black"
                 w_clean = re.sub(r'[\\/*?:"<>|\s]+', '_', white_name).strip('_.') or "White"
                 
-                new_filename = f"{sys_month}{seq:02d}_{b_clean}VS{w_clean}.sgf"
+                new_filename = f"{sys_date}{seq:02d}_{b_clean}VS{w_clean}.sgf"
                 dest_path = os.path.join(pickup_dir, new_filename)
                 shutil.copy2(filepath, dest_path)
                 
-                print(f"  -> MATCHED! [{seq:02d}/31] Saved as: {new_filename}")
+                print(f"  -> MATCHED! [{seq:02d}] Saved as: {new_filename}")
                 print(f"     Cond1 (WinrateDrop>=30%): {len(cond1_hits)}, Cond2 (ScoreLoss>=6): {len(cond2_hits)}, Cond3 (Turnaround 70%->40%): {len(cond3_hits)}")
                 
                 picked_games.append({
@@ -186,9 +185,6 @@ def analyze_and_pickup():
                     "cond3_details": cond3_hits[:5]
                 })
                 
-                if len(picked_games) >= 31:
-                    print(f"\n31件のSGFファイルをピックアップ完了しました。処理を終了します。")
-                    break
             else:
                 print(f"  -> No conditions matched.")
                 

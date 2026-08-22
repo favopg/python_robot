@@ -15,6 +15,7 @@ __pycache__/
 katago/
 gtp_logs/
 analysis_logs/
+analysis_cache/
 *.log
 katago_stderr.log
 
@@ -24,6 +25,7 @@ katago_stderr.log
 
 # SGF files
 sgf/
+sgf_pickup/
 
 # Editor and IDE configurations
 .idea/

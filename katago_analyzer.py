@@ -292,7 +292,7 @@ class KataGoAnalyzer:
 
             return results
 
-    def analyze_moves(self, moves, max_visits=100, rules="japanese", komi=6.5, board_size=19,
+    def analyze_moves(self, moves, max_visits=1000, rules="japanese", komi=6.5, board_size=19,
                       initial_stones=None, initial_player="B", analyze_turns=None, query_id=None,
                       extra_options=None):
         """着手シーケンスから解析クエリを構築して実行します。"""
@@ -319,7 +319,7 @@ class KataGoAnalyzer:
             return self.query_multi_turns(query, turns_count=len(analyze_turns))
         return self.query(query)
 
-    def analyze_sgf(self, sgf_path_or_text, max_visits=100, analyze_turns=None, query_id=None, extra_options=None):
+    def analyze_sgf(self, sgf_path_or_text, max_visits=1000, analyze_turns=None, query_id=None, extra_options=None):
         """SGFファイルを読み込んで解析を実行します。"""
         parsed = parse_sgf(sgf_path_or_text)
         qid = query_id or f"sgf_{int(time.time() * 1000)}"

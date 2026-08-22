@@ -39,7 +39,7 @@ app = FastAPI(
 class AnalyzeRequest(BaseModel):
     date: str = Field(..., description="対象日付 (YYYYMMDD形式, 例: '20260801')")
     turn_range: Optional[str] = Field(None, description="解析対象の手番範囲（未指定時はSGFの全手番を解析）")
-    max_visits: int = Field(50, description="1局面あたりの探索手数（デフォルト: 50）")
+    max_visits: int = Field(1000, description="1局面あたりの探索手数（デフォルト: 1000）")
 
 # --- レスポンスモデル ---
 class CandidateMove(BaseModel):

@@ -32,7 +32,7 @@ def analyze_and_pickup():
         print("No SGF files found.")
         return
 
-    # KataGoアナライザー初期化 (maxVisits: 50)
+    # KataGoアナライザー初期化 (maxVisits: 1000)
     analyzer = KataGoAnalyzer()
     analyzer.clear_logs()
     
@@ -57,8 +57,8 @@ def analyze_and_pickup():
                 # 有効手番範囲: 全手番 (0手目からtotal_moves手目まで)
                 target_turns = list(range(0, total_moves + 1))
                 
-                # 解析実行 (maxVisits=50)
-                raw_results = analyzer.analyze_sgf(filepath, max_visits=50, analyze_turns=target_turns)
+                # 解析実行 (maxVisits=1000)
+                raw_results = analyzer.analyze_sgf(filepath, max_visits=1000, analyze_turns=target_turns)
                 if not isinstance(raw_results, list):
                     raw_results = [raw_results]
             except Exception as e:

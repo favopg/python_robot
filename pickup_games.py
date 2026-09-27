@@ -1,3 +1,4 @@
+import sys
 import os
 import re
 import glob
@@ -7,12 +8,14 @@ from datetime import datetime
 import config
 from katago_analyzer import KataGoAnalyzer, parse_sgf
 
-def analyze_and_pickup():
-    # 入力SGFフォルダ（当プロジェクトのsgfフォルダ内の日付サブディレクトリ）
+def analyze_and_pickup(target_date=None):
+    # 入力SGFフォルダ
     project_root = os.path.dirname(os.path.abspath(__file__))
-    sys_date = datetime.now().strftime("%Y%m%d")
-    sgf_dir = os.path.join(project_root, "sgf", sys_date)
-    pickup_dir = os.path.join(project_root, "sgf_pickup", sys_date)
+    if target_date is None:
+        target_date = datetime.now().strftime("%Y%m%d")
+    
+    sgf_dir = os.path.join(project_root, "sgf", target_date)
+    pickup_dir = os.path.join(project_root, "sgf_pickup", target_date)
     
     os.makedirs(pickup_dir, exist_ok=True)
     # 既存の出力フォルダ内SGFファイルをクリア
@@ -46,6 +49,8 @@ def analyze_and_pickup():
             print(f"\n[{idx}/{len(sgf_files)}] Analyzing: {filename} ...")
             
             try:
+                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                    sgf_content = f.read()
                 parsed = parse_sgf(filepath)
                 komi = parsed.get("komi")
                 if komi not in (6.5, 7.5):
@@ -73,6 +78,7 @@ def analyze_and_pickup():
             # - winrate: currentPlayer視点の勝率 (0.0 〜 1.0)
             # - scoreLead: currentPlayer視点のリード目数 (+は優勢, -は劣勢)
             turn_records = {}
+            formatted_results = []
             for res in raw_results:
                 t = res.get("turnNumber", 0)
                 root = res.get("rootInfo", {})
@@ -92,6 +98,31 @@ def analyze_and_pickup():
                     "b_winrate": b_winrate,
                     "b_lead": b_lead
                 }
+
+                # app.py の TurnAnalysis 形式に合わせたデータ整形
+                move_infos = res.get("moveInfos", [])
+                candidates = []
+                for m in move_infos:
+                    candidates.append({
+                        "move": m.get("move", "None"),
+                        "visits": m.get("visits", 0),
+                        "winrate": round(m.get("winrate", 0.0) * 100, 2),
+                        "scoreLead": round(m.get("scoreLead", 0.0), 2),
+                        "pv": m.get("pv", [])
+                    })
+                
+                best_move = move_infos[0].get("move", "None") if move_infos else "None"
+                best_pv = move_infos[0].get("pv", []) if move_infos else []
+
+                formatted_results.append({
+                    "turn": t,
+                    "player": player,
+                    "winrate": round(p_winrate * 100, 2),
+                    "scoreLead": round(p_lead, 2),
+                    "bestMove": best_move,
+                    "pv": best_pv,
+                    "candidates": candidates
+                })
             
             # 条件判定
             # ① 1手ごとの勝率急落幅（Winrate Drop）: 30%以上の下落が存在するか (winrate_drop >= 0.30)
@@ -157,33 +188,62 @@ def analyze_and_pickup():
             is_matched = bool(cond1_hits or cond2_hits or cond3_hits)
             
             if is_matched:
-                seq = len(picked_games) + 1
                 black_name = parsed.get("black", "Black")
                 white_name = parsed.get("white", "White")
                 b_clean = re.sub(r'[\\/*?:"<>|\s]+', '_', black_name).strip('_.') or "Black"
                 w_clean = re.sub(r'[\\/*?:"<>|\s]+', '_', white_name).strip('_.') or "White"
                 
-                new_filename = f"{sys_date}{seq:02d}_{b_clean}VS{w_clean}.sgf"
+                # 出力ファイル名: YYYYMMDD_黒番VS白番.sgf
+                new_filename = f"{target_date}_{b_clean}VS{w_clean}.sgf"
                 dest_path = os.path.join(pickup_dir, new_filename)
+                
+                # 同名ファイルがある場合の重複回避 (必要に応じて)
+                if os.path.exists(dest_path):
+                    count = 1
+                    while os.path.exists(os.path.join(pickup_dir, f"{target_date}_{b_clean}VS{w_clean}_{count}.sgf")):
+                        count += 1
+                    new_filename = f"{target_date}_{b_clean}VS{w_clean}_{count}.sgf"
+                    dest_path = os.path.join(pickup_dir, new_filename)
+
                 shutil.copy2(filepath, dest_path)
                 
-                print(f"  -> MATCHED! [{seq:02d}] Saved as: {new_filename}")
-                print(f"     Cond1 (WinrateDrop>=30%): {len(cond1_hits)}, Cond2 (ScoreLoss>=6): {len(cond2_hits)}, Cond3 (Turnaround 70%->40%): {len(cond3_hits)}")
-                
-                picked_games.append({
-                    "file": new_filename,
-                    "original_file": filename,
-                    "seq": seq,
-                    "black": b_clean,
-                    "white": w_clean,
+                # app.py の AnalyzeResponse 形式に準拠したデータ作成
+                game_info = {
+                    "status": "success",
+                    "sgf_content": sgf_content,
                     "total_moves": total_moves,
-                    "cond1_count": len(cond1_hits),
-                    "cond2_count": len(cond2_hits),
-                    "cond3_count": len(cond3_hits),
-                    "cond1_details": cond1_hits[:5], # 上位/一部抜粋
-                    "cond2_details": cond2_hits[:5],
-                    "cond3_details": cond3_hits[:5]
-                })
+                    "analyzed_positions": len(formatted_results),
+                    "results": formatted_results,
+                    # 以下、pickup_games.py 独自のメタ情報（必要に応じて維持）
+                    "pickup_info": {
+                        "file": new_filename,
+                        "original_file": filename,
+                        "black": black_name,
+                        "white": white_name,
+                        "cond1_count": len(cond1_hits),
+                        "cond2_count": len(cond2_hits),
+                        "cond3_count": len(cond3_hits),
+                        "cond1_details": cond1_hits[:5],
+                        "cond2_details": cond2_hits[:5],
+                        "cond3_details": cond3_hits[:5]
+                    }
+                }
+                
+                # 個別レポート出力: YYYYMMDD_黒番VS白番.json
+                report_filename = new_filename.replace(".sgf", ".json")
+                report_path = os.path.join(pickup_dir, report_filename)
+                with open(report_path, "w", encoding="utf-8") as f:
+                    json.dump(game_info, f, ensure_ascii=False, indent=2)
+
+                print(f"  -> MATCHED! Saved as: {new_filename} and {report_filename}")
+                print(f"     Cond1: {len(cond1_hits)}, Cond2: {len(cond2_hits)}, Cond3: {len(cond3_hits)}")
+                
+                picked_games.append(game_info)
+                
+                # 31ファイル分保存したら終了
+                if len(picked_games) >= 31:
+                    print(f"\n[INFO] Reached 31 picked games. Ending analysis early.")
+                    break
                 
             else:
                 print(f"  -> No conditions matched.")
@@ -199,11 +259,15 @@ def analyze_and_pickup():
     print(f"Saved to: {pickup_dir}")
     print(f"==========================================")
     
-    # レポートJSON出力
+    # 全体レポートが必要な場合は残すが、要求には「sgfファイル単位で作成」とあるので
+    # pickup_report.json への追記/作成は任意。ここでは維持しつつ個別も出す形にした。
     report_file = os.path.join(pickup_dir, "pickup_report.json")
     with open(report_file, "w", encoding="utf-8") as f:
         json.dump(picked_games, f, ensure_ascii=False, indent=2)
-    print(f"Report written to {report_file}")
+    print(f"Summary report written to {report_file}")
 
 if __name__ == "__main__":
-    analyze_and_pickup()
+    target = None
+    if len(sys.argv) > 1:
+        target = sys.argv[1]
+    analyze_and_pickup(target)
